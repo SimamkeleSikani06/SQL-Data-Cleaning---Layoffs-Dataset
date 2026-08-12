@@ -1,27 +1,26 @@
-# Layoffs Data Cleaning & Exploratory Analysis
+# Layoffs Data Cleaning Project
 
-## Overview
+## Project Overview
 
-This project demonstrates an end-to-end data cleaning workflow using MySQL on a layoffs dataset.
+This project focuses on cleaning and preparing a layoffs dataset for future analysis using MySQL.
 
-The project focuses on preparing raw, inconsistent data for reliable analysis by identifying duplicate records, standardising values, handling missing data, converting data types, and validating the results before exploratory analysis.
+The objective of this project was to take a raw dataset, identify data-quality issues, apply appropriate cleaning techniques, and produce a more reliable dataset that can be used for exploratory data analysis.
 
-The project also demonstrates how data-cleaning decisions can directly affect analytical results.
+This project currently focuses **only on data cleaning**. Exploratory analysis and visualization will be completed as the next stage.
 
 ---
 
-## Business Objective
+## Objective
 
-The objective of this project is to transform a raw layoffs dataset into a reliable dataset that can be used to investigate patterns and trends in employee layoffs.
+The goal of the cleaning process was to:
 
-The analysis will ultimately explore questions such as:
-
-- How have layoffs changed over time?
-- Which industries experienced the most layoffs?
-- Which countries were most affected?
-- Which companies recorded the largest layoffs?
-- Which company stages experienced the greatest layoffs?
-- Are there noticeable patterns in layoffs over time?
+- Identify duplicate records
+- Standardise inconsistent data
+- Handle NULL and blank values
+- Recover missing information where possible
+- Convert columns to appropriate data types
+- Remove records that could not support meaningful analysis
+- Validate the cleaned dataset
 
 ---
 
@@ -39,9 +38,9 @@ The dataset contains information about company layoffs, including:
 - Country
 - Funds raised
 
-The original raw dataset is preserved in the `layoffs` table.
+The original dataset was stored in the `layoffs` table.
 
-Working tables were created separately so that the original data could remain unchanged.
+I preserved the raw table and used separate working tables for the cleaning process.
 
 ---
 
@@ -62,7 +61,7 @@ Data Standardisation
      ↓
 Data-Type Conversion
      ↓
-NULL / Blank Value Investigation
+NULL / Blank Value Handling
      ↓
 Missing-Value Recovery
      ↓
@@ -71,14 +70,11 @@ Remove Unusable Records
 Validation
      ↓
 Clean Dataset
-     ↓
-Exploratory Data Analysis
-Key Cleaning Steps
 1. Duplicate Detection
 
-The dataset did not contain a dedicated unique identifier for reliably identifying duplicate records.
+The dataset did not contain a dedicated unique identifier that could reliably be used to identify duplicate records.
 
-I used the ROW_NUMBER() window function together with a CTE to identify records with identical values across the relevant columns.
+I used the ROW_NUMBER() window function together with a Common Table Expression (CTE) to identify duplicate records.
 
 ROW_NUMBER() OVER (
     PARTITION BY
@@ -93,103 +89,118 @@ ROW_NUMBER() OVER (
         funds_raised_millions
 ) AS row_num
 
-Records where row_num > 1 were treated as duplicate occurrences.
+Records with a row_num greater than 1 were identified as duplicate occurrences.
+
+A separate working table was used to store the generated row numbers so that duplicate records could be removed.
 
 2. Data Standardisation
 
-Several inconsistencies were identified and standardised.
+I identified and corrected inconsistencies in several columns.
 
-Examples include:
+Company Names
 
-Removing unnecessary whitespace from company names
-Standardising cryptocurrency-related industry values to Crypto
-Removing trailing punctuation from country values
+Unnecessary leading and trailing whitespace was removed using TRIM().
 
-Functions such as TRIM() and LIKE were used to identify and correct these inconsistencies.
+UPDATE data_cleaning2
+SET company = TRIM(company);
+Industry
 
+Different variations of cryptocurrency-related industries were standardised to:
+
+Crypto
+
+using:
+
+UPDATE data_cleaning2
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
+Country
+
+Trailing punctuation was removed from affected United States values.
+
+UPDATE data_cleaning2
+SET country = TRIM(TRAILING '.' FROM country)
+WHERE country LIKE 'United States%';
 3. Date Conversion
 
-The original date column was stored as text.
+The date column was initially stored as text.
 
-The values were converted using:
+I converted the values into a proper MySQL DATE format using:
 
 STR_TO_DATE(`date`, '%m/%d/%Y')
 
-The column was then changed to the MySQL DATE data type.
+The column was then changed to the DATE data type.
 
-This allows reliable chronological sorting, filtering and time-based analysis.
+This prepares the dataset for future time-based analysis.
 
-4. Missing Values
+4. NULL and Blank Values
 
-Blank industry values were converted to NULL.
+I investigated missing and blank values in the dataset.
 
-I then investigated whether missing industry values could be recovered from other records belonging to the same company.
+Blank industry values were converted to NULL so that missing information was represented consistently.
 
-A self-join was used to identify cases where:
+UPDATE data_cleaning2
+SET industry = NULL
+WHERE industry = '';
+5. Recovering Missing Information
 
-One record had a missing industry
-Another record for the same company contained a known industry
+Before removing records with missing information, I investigated whether missing industry values could be recovered from other records.
 
-Where reliable information existed, the missing value was populated rather than unnecessarily deleting the record.
+Some companies appeared multiple times in the dataset.
 
-Important Data-Quality Issue Discovered
+Where another record belonging to the same company contained a valid industry value, I used a self-join to identify and populate the missing value.
 
-During validation, I discovered that my original cleaning logic was removing too many valid records.
+UPDATE data_cleaning2 t1
+JOIN data_cleaning2 t2
+    ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL
+  AND t2.industry IS NOT NULL;
 
-The original condition was:
+This allowed missing information to be recovered from existing data rather than being guessed or unnecessarily deleted.
+
+6. Handling Records With Missing Layoff Information
+
+During the cleaning process, I identified records where the two main layoff measures were missing:
+
+total_laid_off
+percentage_laid_off
+
+An important correction was made during validation.
+
+Original logic
+
+I initially used:
 
 WHERE total_laid_off IS NULL
-   OR percentage_laid_off IS NULL
+   OR percentage_laid_off IS NULL;
 
-This meant that a record was removed if either value was missing.
+This was too aggressive because it removed records where only one of the two values was missing.
 
-For example:
+Corrected logic
 
-total_laid_off = NULL
-percentage_laid_off = 50%
-
-would have been deleted even though the record still contained useful information.
-
-The logic was corrected to:
+The condition was changed to:
 
 WHERE total_laid_off IS NULL
-  AND percentage_laid_off IS NULL
+  AND percentage_laid_off IS NULL;
 
-This means that a record is removed only when both key layoff measures are missing.
+This means that a record is removed only when both layoff measures are missing.
 
-Why this mattered
+This correction prevented valid records from being unnecessarily deleted.
 
-The original logic caused over-deletion of valid records and resulted in aggregate results that did not match the expected results.
+7. Validation
 
-Rather than modifying the analysis to compensate for the discrepancy, I traced the problem back to the data-cleaning pipeline, identified the incorrect condition, restarted from the raw dataset and re-ran the pipeline using the corrected logic.
+During validation, I discovered that my initial cleaning logic caused aggregate results to differ from expected results.
 
-This became an important validation step in the project.
+Instead of changing the analysis, I traced the discrepancy back to the cleaning process.
 
-Validation
+I identified the incorrect OR condition, corrected it to AND, restarted the cleaning process from the raw dataset, and re-ran the pipeline.
 
-The cleaning process was validated by comparing the resulting dataset and aggregate calculations against expected results.
+This demonstrated an important principle:
 
-The validation process was:
+A successful SQL query does not necessarily mean that the resulting dataset is correct.
 
-Clean Data
-    ↓
-Run Analysis
-    ↓
-Identify Mismatch
-    ↓
-Trace Result Back to Cleaning
-    ↓
-Identify Incorrect Logic
-    ↓
-Correct Cleaning Rule
-    ↓
-Restart From Raw Data
-    ↓
-Re-run Pipeline
-    ↓
-Validate Results
-
-This demonstrated that data cleaning is an iterative process and that analytical results should not be trusted until the underlying dataset has been validated.
+The cleaning process therefore included validation and revision rather than assuming that the first result was correct.
 
 SQL Skills Demonstrated
 
@@ -197,10 +208,8 @@ This project demonstrates practical use of:
 
 SELECT
 WHERE
-LIKE
 DISTINCT
-GROUP BY
-ORDER BY
+LIKE
 JOIN
 Self-joins
 Common Table Expressions (CTEs)
@@ -216,82 +225,40 @@ Data-type conversion
 Data standardisation
 Data validation
 Project Structure
-layoffs-data-analysis/
+layoffs-data-cleaning/
 │
 ├── README.md
 │
 ├── data_cleaning_notes.md
 │
-├── sql/
-│   ├── data_cleaning.sql
-│   └── exploratory_analysis.sql
-│
-└── data/
-    └── README.md
-
-The raw dataset is not included in this repository where licensing or redistribution restrictions apply.
-
+└── sql/
+    └── data_cleaning.sql
 Tools
 
 Database: MySQL
 
-Primary skills: SQL, Data Cleaning, Data Validation, Exploratory Data Analysis
+Focus: Data Cleaning and Data Quality
 
-What I Learned
+Techniques: SQL, CTEs, Window Functions, Joins, Data Standardisation, NULL Handling
 
-This project reinforced that data analysis does not begin with writing analytical queries.
+Current Project Status
+Completed
+ Raw data inspection
+ Duplicate identification
+ Duplicate removal
+ Data standardisation
+ Date conversion
+ NULL and blank-value handling
+ Missing-value recovery
+ Data-quality validation
+ Cleaning documentation
+Next
+ Exploratory Data Analysis
+ Business questions
+ Data analysis
+ Business insights
+ Data visualisation
 
-A reliable workflow starts with understanding the data and assessing its quality.
-
-The main lesson from this project was that cleaning logic directly affects analytical results.
-
-The OR versus AND issue demonstrated that a query can execute successfully while still producing an analytically incorrect dataset.
-
-I therefore learned to:
-
-Understand the structure of the dataset
-Identify data-quality problems
-Define a rule for addressing each problem
-Apply transformations
-Validate the resulting data
-Investigate unexpected results
-Trace discrepancies back to the transformation logic
-Only then proceed with analysis
-Next Step
-
-The cleaned dataset will be used for exploratory data analysis.
-
-The next stage of the project will focus on identifying trends, patterns and business insights from the cleaned layoffs data.
-
-The overall project progression is:
-
-Data Cleaning
-      ↓
-Data Validation
-      ↓
-Exploratory Data Analysis
-      ↓
-Business Insights
-      ↓
-Visualization
 Author
 
 Simamkele Sikani
-
-Aspiring Junior Data Analyst focused on SQL, data cleaning, exploratory analysis and business-focused insights.
-
-
-### One change I strongly recommend for your GitHub
-
-Don't call the repository simply **`data-cleaning`**.
-
-Use something more descriptive, for example:
-
-```text
-layoffs-data-cleaning-analysis
-
-or, once the EDA is finished:
-
-layoffs-data-analysis
-
-The second is stronger for your portfolio because the project will eventually demonstrate the full workflow: cleaning → analysis → insights, rather than only cleaning.
