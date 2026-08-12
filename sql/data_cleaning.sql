@@ -1,8 +1,6 @@
 #DATA_CLEANING:
 select * from layoffs;
 
--- identify the duplicates  
-
 -- create table data_cleaning
 -- like  layoffs;
 -- insert data_cleaning
@@ -16,18 +14,17 @@ from data_cleaning
 ) select * from view_duplicatesCTE
 where row_num > 1;
 
-
 -- CREATE TABLE `data_cleaning2` (
---   `company` text,
---   `location` text,
---   `industry` text,
---   `total_laid_off` int DEFAULT NULL,
---   `percentage_laid_off` text,
---   `date` text,
---   `stage` text,
---   `country` text,
---   `funds_raised_millions` int DEFAULT NULL,
---   `row_num` INT
+--    `company` text,
+--    `location` text,
+--    `industry` text,
+--    `total_laid_off` int DEFAULT NULL,
+--    `percentage_laid_off` text,
+--    `date` text,
+--    `stage` text,
+--    `country` text,
+--    `funds_raised_millions` int DEFAULT NULL,
+--    `row_num` INT
 -- ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- insert data_cleaning2
@@ -38,7 +35,7 @@ where row_num > 1;
 
 delete 
 from data_cleaning2
-where row_num > 1 ;
+where row_num > 1;
 
 
 -- standardize the data
@@ -77,6 +74,7 @@ set `date` = str_to_date(`date`, '%m/%d/%Y');
 alter table data_cleaning2
 modify `date` date;
 
+
 -- null and blank values
 
 select * from data_cleaning2
@@ -104,18 +102,17 @@ set t1.industry = t2.industry
 where t1.industry is null
 and t2.industry is not null;
 
+select * from data_cleaning2;
+
 -- removing dead-end rows and columns
 
 delete 
 from data_cleaning2 
 where (total_laid_off is null or total_laid_off = "")
-or (percentage_laid_off is  null or percentage_laid_off = "");
+and (percentage_laid_off is  null or percentage_laid_off = "");
 
 alter table data_cleaning2 
 drop column row_num;
 
-select * from data_cleaning2;
-
-data_cleaning
 
 
