@@ -1,54 +1,59 @@
-# Layoffs Data Cleaning Project
+Layoffs Data Cleaning Project
 
-## Project Overview
+Project Overview
 
 This project focuses on cleaning and preparing a layoffs dataset for future analysis using MySQL.
 
-The objective of this project was to take a raw dataset, identify data-quality issues, apply appropriate cleaning techniques, and produce a more reliable dataset that can be used for exploratory data analysis.
+The objective was to take a raw dataset, identify data-quality issues, apply appropriate cleaning techniques, and produce a more reliable dataset for exploratory data analysis.
 
-This project currently focuses **only on data cleaning**. Exploratory analysis and visualization will be completed as the next stage.
+This project currently focuses only on data cleaning. Exploratory analysis and visualization will be completed as the next stage.
 
----
-
-## Objective
+Objective
 
 The goal of the cleaning process was to:
 
-- Identify duplicate records
-- Standardise inconsistent data
-- Handle NULL and blank values
-- Recover missing information where possible
-- Convert columns to appropriate data types
-- Remove records that could not support meaningful analysis
-- Validate the cleaned dataset
+Identify duplicate records
 
----
+Standardise inconsistent data
 
-## Dataset
+Handle NULL and blank values
+
+Recover missing information where possible
+
+Convert columns to appropriate data types
+
+Remove records that could not support meaningful analysis
+
+Validate the cleaned dataset
+
+Dataset
 
 The dataset contains information about company layoffs, including:
 
-- Company
-- Location
-- Industry
-- Total laid off
-- Percentage laid off
-- Date
-- Company stage
-- Country
-- Funds raised
+Company
 
-The original dataset was stored in the `layoffs` table.
+Location
+
+Industry
+
+Total laid off
+
+Percentage laid off
+
+Date
+
+Company stage
+
+Country
+
+Funds raised
+
+The original dataset was stored in the layoffs table.
 
 I preserved the raw table and used separate working tables for the cleaning process.
 
----
+Data Cleaning Workflow
 
-## Data Cleaning Workflow
-
-The cleaning process followed this workflow:
-
-```text
 Raw Dataset
      ↓
 Data Inspection
@@ -70,6 +75,7 @@ Remove Unusable Records
 Validation
      ↓
 Clean Dataset
+
 1. Duplicate Detection
 
 The dataset did not contain a dedicated unique identifier that could reliably be used to identify duplicate records.
@@ -103,17 +109,15 @@ Unnecessary leading and trailing whitespace was removed using TRIM().
 
 UPDATE data_cleaning2
 SET company = TRIM(company);
+
 Industry
 
-Different variations of cryptocurrency-related industries were standardised to:
-
-Crypto
-
-using:
+Different variations of cryptocurrency-related industries were standardised to Crypto.
 
 UPDATE data_cleaning2
 SET industry = 'Crypto'
 WHERE industry LIKE 'Crypto%';
+
 Country
 
 Trailing punctuation was removed from affected United States values.
@@ -121,6 +125,7 @@ Trailing punctuation was removed from affected United States values.
 UPDATE data_cleaning2
 SET country = TRIM(TRAILING '.' FROM country)
 WHERE country LIKE 'United States%';
+
 3. Date Conversion
 
 The date column was initially stored as text.
@@ -142,6 +147,7 @@ Blank industry values were converted to NULL so that missing information was rep
 UPDATE data_cleaning2
 SET industry = NULL
 WHERE industry = '';
+
 5. Recovering Missing Information
 
 Before removing records with missing information, I investigated whether missing industry values could be recovered from other records.
@@ -164,6 +170,7 @@ This allowed missing information to be recovered from existing data rather than 
 During the cleaning process, I identified records where the two main layoff measures were missing:
 
 total_laid_off
+
 percentage_laid_off
 
 An important correction was made during validation.
@@ -207,32 +214,51 @@ SQL Skills Demonstrated
 This project demonstrates practical use of:
 
 SELECT
+
 WHERE
+
 DISTINCT
+
 LIKE
+
 JOIN
+
 Self-joins
+
 Common Table Expressions (CTEs)
+
 Window functions
+
 ROW_NUMBER()
+
 UPDATE
+
 DELETE
+
 ALTER TABLE
+
 TRIM()
+
 STR_TO_DATE()
+
 NULL handling
+
 Data-type conversion
+
 Data standardisation
+
 Data validation
+
 Project Structure
+
 layoffs-data-cleaning/
 │
 ├── README.md
-│
 ├── data_cleaning_notes.md
 │
 └── sql/
     └── data_cleaning.sql
+
 Tools
 
 Database: MySQL
@@ -242,22 +268,38 @@ Focus: Data Cleaning and Data Quality
 Techniques: SQL, CTEs, Window Functions, Joins, Data Standardisation, NULL Handling
 
 Current Project Status
+
 Completed
- Raw data inspection
- Duplicate identification
- Duplicate removal
- Data standardisation
- Date conversion
- NULL and blank-value handling
- Missing-value recovery
- Data-quality validation
- Cleaning documentation
+
+Raw data inspection
+
+Duplicate identification
+
+Duplicate removal
+
+Data standardisation
+
+Date conversion
+
+NULL and blank-value handling
+
+Missing-value recovery
+
+Data-quality validation
+
+Cleaning documentation
+
 Next
- Exploratory Data Analysis
- Business questions
- Data analysis
- Business insights
- Data visualisation
+
+Exploratory Data Analysis
+
+Business questions
+
+Data analysis
+
+Business insights
+
+Data visualisation
 
 Author
 
