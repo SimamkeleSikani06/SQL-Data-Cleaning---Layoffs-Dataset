@@ -1,434 +1,573 @@
-# SQL Data Cleaning — Layoffs Dataset
+# Data Cleaning Notes — Layoffs Dataset
 
 ## Project Overview
 
-This project demonstrates a practical data-cleaning workflow using MySQL.
+This project focuses on cleaning and preparing a layoffs dataset for further exploratory data analysis using MySQL.
 
-The objective was to take a raw layoffs dataset, identify data-quality issues, clean and standardize the data, handle missing values where possible, remove records that were not suitable for further analysis, and produce a cleaner dataset for exploratory analysis.
+The original dataset was stored in the `layoffs` table. I preserved the raw data and created separate working tables for the cleaning process.
 
-This project focuses specifically on the **data preparation stage of the analytical workflow**.
+The purpose of the cleaning process was to identify and resolve data-quality issues before performing analysis.
 
-The project was completed as a practical exercise to strengthen my SQL and data-quality skills as I develop toward a Junior Data Analyst role.
+### Cleaning workflow
 
----
-
-## Dataset
-
-The dataset contains information about company layoffs, including:
-
-* Company
-* Location
-* Industry
-* Total employees laid off
-* Percentage of employees laid off
-* Date
-* Company stage
-* Country
-* Funds raised in millions
-
-The original dataset was preserved in the `layoffs` table and was not directly modified during the cleaning process.
+1. Inspect the raw dataset
+2. Identify duplicate records
+3. Create a working table
+4. Remove duplicate records
+5. Standardise inconsistent values
+6. Convert incorrect data types
+7. Identify NULL and blank values
+8. Recover missing values where reliable information existed
+9. Remove records that could not support meaningful analysis
+10. Remove temporary columns
+11. Validate the cleaned dataset
 
 ---
 
-## Project Structure
-
-```text
-sql-data-cleaning-layoffs/
-│
-├── README.md
-│
-├── data/
-│   └── layoffs.csv
-│
-├── sql/
-│   └── data_cleaning.sql
-│
-└── documentation/
-    └── data_cleaning_notes.md
-```
-
----
-
-## Data Cleaning Workflow
-
-The cleaning process followed this general workflow:
-
-```text
-Raw Data
-   ↓
-Duplicate Identification
-   ↓
-Duplicate Removal
-   ↓
-Data Standardization
-   ↓
-Missing / NULL Value Investigation
-   ↓
-Missing Value Recovery
-   ↓
-Removal of Unusable Records
-   ↓
-Clean Dataset
-```
-
----
-
-## 1. Preserving the Raw Data
+# 1. Raw Dataset
 
 The original dataset was stored in the `layoffs` table.
 
-I kept this table unchanged so that the original data remained available as a reference throughout the cleaning process.
+```sql
+SELECT *
+FROM layoffs;
+````
 
-I then created working tables for the cleaning process rather than modifying the raw dataset directly.
+The raw table was kept unchanged so that it could be used as the source for restarting the cleaning process if an error was discovered.
 
-The workflow was:
+The working process followed this structure:
 
 ```text
 layoffs
    ↓
 data_cleaning
    ↓
+duplicate detection
+   ↓
 data_cleaning2
+   ↓
+cleaned dataset
 ```
 
-`data_cleaning` was used to investigate the dataset and identify duplicate records.
-
-`data_cleaning2` was used as the main table for the subsequent cleaning and transformation operations.
+Keeping the raw data separate from the working tables made it possible to reproduce the cleaning process.
 
 ---
 
-## 2. Identifying Duplicate Records
+# 2. Duplicate Detection
 
-The dataset did not contain a dedicated unique row identifier that could be used to immediately identify duplicate records.
+The dataset did not contain a dedicated unique identifier that could reliably be used to identify duplicate records.
 
-I therefore used the SQL `ROW_NUMBER()` window function.
+I therefore used the `ROW_NUMBER()` window function to identify records that contained the same values across the relevant columns.
 
-The records were partitioned using the combination of:
+```sql
+WITH view_duplicatesCTE AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+                company,
+                location,
+                industry,
+                total_laid_off,
+                percentage_laid_off,
+                `date`,
+                stage,
+                country,
+                funds_raised_millions
+        ) AS row_num
+    FROM data_cleaning
+)
+SELECT *
+FROM view_duplicatesCTE
+WHERE row_num > 1;
+```
 
-* Company
-* Location
-* Industry
-* Total laid off
-* Percentage laid off
-* Date
-* Stage
-* Country
-* Funds raised
+### Why `ROW_NUMBER()` was used
 
-This allowed identical records to be grouped and assigned sequential row numbers.
+`ROW_NUMBER()` assigns a sequential number to records within each group of matching values.
 
 For example:
 
-```sql
-ROW_NUMBER() OVER (
-    PARTITION BY company,
-                 location,
-                 industry,
-                 total_laid_off,
-                 percentage_laid_off,
-                 `date`,
-                 stage,
-                 country,
-                 funds_raised_millions
-)
-```
-
-Records with:
-
 ```text
-row_num = 1
+Company A | Tech | 100 | 1
+Company A | Tech | 100 | 2
+Company A | Tech | 100 | 3
 ```
 
-were treated as the first occurrence.
-
-Records with:
-
-```text
-row_num > 1
-```
-
-were identified as duplicate occurrences.
-
-A CTE was used to make the window-function result available for filtering.
+The first record is retained while records with `row_num > 1` can be treated as duplicate occurrences.
 
 ---
 
-## 3. Removing Duplicates
+# 3. Creating a Working Table
 
-After identifying the duplicate records, the row-numbering result was persisted in the working table.
+The window function was useful for identifying duplicates, but I needed the generated `row_num` value to be stored as a column so that the duplicate records could be removed.
 
-This allowed records where:
+I therefore created `data_cleaning2` containing the calculated row number.
+
+This allowed the duplicate ranking to become stored data rather than a temporary window-function result.
+
+The duplicates were then removed using:
 
 ```sql
-row_num > 1
+DELETE
+FROM data_cleaning2
+WHERE row_num > 1;
 ```
 
-to be removed.
-
-The original `layoffs` table remained unchanged.
-
-This separation helped reduce the risk of accidentally modifying the source data.
+The first occurrence of each duplicate group was retained.
 
 ---
 
-## 4. Standardizing the Data
+# 4. Data Standardisation
 
-After duplicate removal, I investigated the consistency of the categorical and text-based columns.
+After duplicate removal, I moved to standardising inconsistent values.
 
-### Company Names
+I checked the columns individually and applied transformations where inconsistencies were identified.
 
-Leading and trailing whitespace was removed using:
+---
+
+## 4.1 Company Names
+
+I checked company names for unnecessary whitespace:
 
 ```sql
-TRIM(company)
+SELECT DISTINCT
+    company,
+    TRIM(company)
+FROM data_cleaning2;
 ```
 
-This ensured that values containing unnecessary whitespace were standardized.
+I then removed leading and trailing whitespace:
 
-### Industry
-
-Different variations of cryptocurrency-related industry values were identified.
-
-Values matching:
-
-```text
-Crypto%
+```sql
+UPDATE data_cleaning2
+SET company = TRIM(company);
 ```
 
-were standardized to:
+This prevents whitespace differences from causing otherwise identical company names to be treated as different values.
+
+---
+
+## 4.2 Industry
+
+The dataset contained multiple variations of cryptocurrency-related industries.
+
+I first inspected the values:
+
+```sql
+SELECT DISTINCT industry
+FROM data_cleaning2
+WHERE industry LIKE 'Crypto%';
+```
+
+The values were standardised to:
 
 ```text
 Crypto
 ```
 
-This reduces unnecessary category fragmentation during future analysis.
+using:
 
-### Country
-
-Some records contained:
-
-```text
-United States.
+```sql
+UPDATE data_cleaning2
+SET industry = 'Crypto'
+WHERE industry LIKE 'Crypto%';
 ```
 
-while others contained:
-
-```text
-United States
-```
-
-The trailing period was removed to standardize the country value.
+This makes grouping and aggregation more reliable.
 
 ---
 
-## 5. Standardizing Dates
+## 4.3 Country
 
-The original date values were stored as text.
+I identified variations of `United States` containing trailing punctuation.
 
-They were converted into MySQL `DATE` values using:
+I inspected the values using:
 
 ```sql
-STR_TO_DATE(`date`, '%m/%d/%Y')
+SELECT DISTINCT
+    country,
+    TRIM(TRAILING '.' FROM country)
+FROM data_cleaning2
+WHERE country LIKE 'United States%';
 ```
 
-The column was then changed to the `DATE` data type.
+The trailing period was removed:
 
-This makes the column more suitable for:
+```sql
+UPDATE data_cleaning2
+SET country = TRIM(TRAILING '.' FROM country)
+WHERE country LIKE 'United States%';
+```
 
-* Date filtering
-* Sorting
-* Time-based analysis
-* Year/month extraction
-* Date comparisons
+This standardised the country values without changing the underlying meaning.
 
 ---
 
-## 6. Handling NULL and Blank Values
+# 5. Date Conversion
 
-I investigated missing and blank values rather than immediately deleting them.
+The `date` column was initially stored as text.
 
-For example, blank industry values were identified using:
+I first tested the conversion:
 
 ```sql
+SELECT
+    `date`,
+    STR_TO_DATE(`date`, '%m/%d/%Y')
+FROM data_cleaning2;
+```
+
+The values were then converted:
+
+```sql
+UPDATE data_cleaning2
+SET `date` = STR_TO_DATE(`date`, '%m/%d/%Y');
+```
+
+Finally, the column was changed to the MySQL `DATE` data type:
+
+```sql
+ALTER TABLE data_cleaning2
+MODIFY `date` DATE;
+```
+
+### Why this was necessary
+
+Storing dates using the appropriate `DATE` data type makes it easier to:
+
+* Sort records chronologically
+* Filter by date
+* Extract years and months
+* Perform time-based analysis
+* Compare dates correctly
+
+---
+
+# 6. NULL and Blank Values
+
+I then investigated missing and blank values.
+
+For the `industry` column:
+
+```sql
+SELECT *
+FROM data_cleaning2
 WHERE industry IS NULL
-   OR industry = ''
+   OR industry = '';
 ```
 
-Blank strings were first converted to `NULL` to create a consistent representation of missing information.
+Blank strings were converted to `NULL`:
 
-I then investigated whether the missing industry information could be recovered from other records belonging to the same company.
+```sql
+UPDATE data_cleaning2
+SET industry = NULL
+WHERE industry = '';
+```
 
-Where another record for the same company contained a known industry, that existing information was used to populate the missing value.
-
-This approach avoided simply replacing missing values with assumptions or arbitrary categories.
-
----
-
-## 7. Removing Records With Insufficient Information
-
-After investigating the missing values, I removed records where both:
-
-* `total_laid_off`
-* `percentage_laid_off`
-
-were unavailable.
-
-These fields are important measures for analysing the scale of layoffs.
-
-Records missing both measures therefore provided insufficient information for the intended analysis.
-
-The decision was based on **analytical usefulness**, rather than simply removing every row containing a NULL value.
+This provided a consistent representation for missing industry information.
 
 ---
 
-## 8. Removing Temporary Columns
+# 7. Recovering Missing Industry Values
 
-The `row_num` column was created specifically to support duplicate identification and removal.
+Before removing records with missing information, I investigated whether the missing values could be recovered from other records in the dataset.
 
-Once duplicate records had been handled, the temporary column was no longer required.
+Some companies appeared multiple times, and some records contained an industry value while other records for the same company did not.
 
-It was therefore removed from the final cleaned dataset.
+I identified these cases using a self-join:
+
+```sql
+SELECT *
+FROM data_cleaning2 t1
+JOIN data_cleaning2 t2
+    ON t1.company = t2.company
+WHERE t1.industry IS NULL
+  AND t2.industry IS NOT NULL;
+```
+
+Where a reliable industry value existed for the same company, I used that information to populate the missing value:
+
+```sql
+UPDATE data_cleaning2 t1
+JOIN data_cleaning2 t2
+    ON t1.company = t2.company
+SET t1.industry = t2.industry
+WHERE t1.industry IS NULL
+  AND t2.industry IS NOT NULL;
+```
+
+### Reasoning
+
+I did not manually guess the missing industry.
+
+Instead, I used information already present in the dataset to recover the value.
+
+This reduced unnecessary data loss while keeping the cleaning process evidence-based.
 
 ---
 
-## SQL Techniques Used
+# 8. Corrected Missing-Value Logic
 
-This project used several SQL techniques that are relevant to practical data analysis and data preparation:
+During validation, I discovered a problem in my original cleaning logic.
 
-* `SELECT`
-* `WHERE`
-* `JOIN`
-* `DELETE`
-* `UPDATE`
-* `ALTER TABLE`
-* `TRIM()`
-* `STR_TO_DATE()`
-* `LIKE`
-* `IS NULL`
+The original deletion condition was:
+
+```sql
+WHERE total_laid_off IS NULL
+   OR percentage_laid_off IS NULL;
+```
+
+This was too aggressive.
+
+Using `OR` meant that a record was deleted if **either** of the two columns was missing.
+
+For example:
+
+```text
+total_laid_off       = NULL
+percentage_laid_off  = 50%
+```
+
+The record would have been deleted even though it still contained useful layoff information.
+
+Similarly:
+
+```text
+total_laid_off       = 100
+percentage_laid_off  = NULL
+```
+
+would also have been deleted.
+
+This resulted in valid records being removed and caused aggregate results to differ from the expected results.
+
+---
+
+## Corrected Logic
+
+The correct condition was:
+
+```sql
+WHERE total_laid_off IS NULL
+  AND percentage_laid_off IS NULL;
+```
+
+This means that a record is removed only when **both** layoff measures are missing.
+
+The logic therefore becomes:
+
+```text
+total_laid_off | percentage_laid_off | Action
+------------------------------------------------
+NULL           | 50%                  | Keep
+100            | NULL                 | Keep
+NULL           | NULL                 | Remove
+100            | 50%                  | Keep
+```
+
+This was an important validation finding because it demonstrated that data-cleaning logic can directly affect downstream analysis.
+
+After identifying the issue, I restarted the cleaning process from the raw `layoffs` table and re-ran the pipeline using the corrected logic.
+
+---
+
+# 9. Why the Correction Matters
+
+The difference between `OR` and `AND` is significant when handling missing data.
+
+### Using OR
+
+```sql
+WHERE A IS NULL OR B IS NULL
+```
+
+means:
+
+> Remove the record if either A or B is missing.
+
+### Using AND
+
+```sql
+WHERE A IS NULL AND B IS NULL
+```
+
+means:
+
+> Remove the record only when both A and B are missing.
+
+For this dataset, the second rule was more appropriate because either `total_laid_off` or `percentage_laid_off` could still provide useful information for analysis.
+
+---
+
+# 10. Removing Unusable Records
+
+After correcting the missing-value logic and re-running the cleaning pipeline, records where both key layoff measures were unavailable could be removed.
+
+The purpose was not simply to reduce the dataset size.
+
+The goal was to remove records that could not provide meaningful information for the intended analysis.
+
+This is an important distinction:
+
+> Data cleaning should remove information because there is a justified data-quality or analytical reason, not simply because the data is inconvenient.
+
+---
+
+# 11. Removing Temporary Columns
+
+The `row_num` column was created specifically for duplicate detection.
+
+Once duplicate records had been removed, the column was no longer required.
+
+It was therefore removed:
+
+```sql
+ALTER TABLE data_cleaning2
+DROP COLUMN row_num;
+```
+
+The final dataset was then inspected:
+
+```sql
+SELECT *
+FROM data_cleaning2;
+```
+
+---
+
+# 12. Validation
+
+After completing the cleaning process, I validated the results rather than immediately moving to analysis.
+
+The mismatch between my aggregates and expected results initially revealed that the cleaning logic had removed too many records.
+
+I traced the discrepancy back to the NULL-handling condition.
+
+This led to the following validation process:
+
+```text
+Clean dataset
+      ↓
+Run aggregate analysis
+      ↓
+Compare results
+      ↓
+Identify mismatch
+      ↓
+Investigate cleaning logic
+      ↓
+Find incorrect OR condition
+      ↓
+Replace with AND
+      ↓
+Restart from raw data
+      ↓
+Re-run cleaning pipeline
+      ↓
+Re-validate results
+```
+
+This was an important part of the project because it demonstrated that cleaning is an iterative process rather than a single execution of SQL statements.
+
+---
+
+# 13. SQL Concepts Demonstrated
+
+This project demonstrates practical use of:
+
+* SELECT
+* WHERE
+* DISTINCT
+* LIKE
+* TRIM
+* STR_TO_DATE
+* UPDATE
+* DELETE
+* ALTER TABLE
+* INNER JOIN
+* Self-joins
 * Common Table Expressions (CTEs)
 * Window functions
-* `ROW_NUMBER()`
-* Data type conversion
-
----
-
-## Data Quality Issues Identified
-
-The cleaning process identified several types of data-quality issues:
-
-| Issue                               | Treatment                                   |
-| ----------------------------------- | ------------------------------------------- |
-| Duplicate records                   | Identified using `ROW_NUMBER()` and removed |
-| Extra whitespace                    | Removed using `TRIM()`                      |
-| Inconsistent industry values        | Standardized                                |
-| Inconsistent country values         | Standardized                                |
-| Dates stored as text                | Converted to `DATE`                         |
-| Blank industry values               | Converted to `NULL` and investigated        |
-| Recoverable missing industry values | Populated using existing company records    |
-| Records missing key layoff measures | Removed                                     |
-| Temporary `row_num` column          | Removed after duplicate processing          |
-
----
-
-## Key Data-Cleaning Principles Applied
-
-### Preserve the raw data
-
-The original dataset was kept unchanged so that the cleaning process could always be traced back to the source.
-
-### Investigate before modifying
-
-Potential problems were investigated before applying `UPDATE` or `DELETE` operations.
-
-### Do not automatically delete missing data
-
-Missing values were assessed based on whether they affected the intended analysis.
-
-### Use existing information where possible
-
-Missing industry values were recovered where reliable information for the same company existed elsewhere in the dataset.
-
-### Standardize before analysis
-
-Inconsistent categories and formats can produce misleading results during aggregation and exploratory analysis.
-
----
-
-## What I Learned
-
-This project helped me move beyond writing SQL queries for individual questions and start thinking about SQL as part of a broader analytical workflow.
-
-The main lessons were:
-
-1. Data analysis should begin with understanding the quality of the underlying data.
-2. Duplicate detection can require window functions when a dataset does not provide a convenient unique identifier.
-3. CTEs can make intermediate analytical results easier to inspect and filter.
-4. Missing data should be investigated before deciding whether it should be removed.
-5. Data standardization is important before performing categorical analysis.
-6. Cleaning decisions should be based on the intended use of the data.
-7. Preserving the original dataset is important when performing destructive transformations.
-8. SQL is not only used to retrieve data; it can also be used to prepare data for analysis.
-
----
-
-## Limitations
-
-The cleaning decisions in this project were based on the structure and values available in the dataset.
-
-Some missing values could be recovered from other records, while others could not.
-
-The project does not attempt to determine whether every unusual value represents a genuine business event or a data-entry error. Further validation against the original source system would be required for production use.
-
----
-
-## Next Step
-
-The cleaned dataset can now be used for exploratory analysis and visualization.
-
-Potential next analyses include:
-
-* Layoffs by year
-* Layoffs by industry
-* Layoffs by country
-* Companies with the largest layoffs
-* Layoff trends over time
-* Relationship between company stage and layoffs
-* Total layoffs by industry
-
----
-
-## Skills Demonstrated
-
-**SQL**
-
-* Data cleaning
-* Data transformation
-* Data-quality assessment
-* Duplicate detection
-* Window functions
-* CTEs
-* Joins
-* Conditional filtering
-* String manipulation
-* Date transformation
+* ROW_NUMBER()
 * NULL handling
-* Table modification
-
-**Analytical Skills**
-
-* Data-quality investigation
-* Problem solving
-* Transformation reasoning
-* Assumption identification
-* Analytical decision-making
-* Reproducible data preparation
+* Data-type conversion
+* Data standardisation
+* Data validation
 
 ---
 
-## Author
+# 14. Data Cleaning Workflow
 
-**Simamkele Sikani**
+The final workflow can be summarised as:
 
-Junior Data Analyst | SQL | Python | Data Analysis
+```text
+RAW DATA
+   ↓
+Inspect dataset
+   ↓
+Create working copy
+   ↓
+Identify duplicates
+   ↓
+ROW_NUMBER() + Window Function
+   ↓
+Store duplicate ranking
+   ↓
+Remove duplicates
+   ↓
+Standardise values
+   ↓
+Convert data types
+   ↓
+Identify NULL / blank values
+   ↓
+Recover missing values where possible
+   ↓
+Apply validated missing-data rules
+   ↓
+Remove genuinely unusable records
+   ↓
+Remove temporary columns
+   ↓
+Validate results
+   ↓
+CLEAN DATASET
+```
 
-This project is part of my practical data analytics portfolio, where I am developing my ability to work with real-world datasets from data preparation through analysis and reporting.
+---
+
+# 15. Key Learning
+
+The most important lesson from this project was that **data cleaning decisions directly affect analytical results**.
+
+A technically valid SQL query can still produce an incorrect analytical dataset if the underlying business/data-quality rule is wrong.
+
+The `OR` versus `AND` issue demonstrated this clearly.
+
+I initially produced a cleaned dataset that appeared reasonable, but the aggregate results did not match the expected results. Instead of changing the analysis to force the numbers to match, I traced the discrepancy back through the cleaning pipeline and identified the incorrect filtering condition.
+
+I then restarted from the raw dataset and corrected the logic.
+
+This reinforced an important analytical principle:
+
+> **Validate the data before trusting the analysis.**
+
+---
+
+# 16. Next Step
+
+The cleaned dataset will now be used for exploratory data analysis.
+
+The next stage will focus on answering business questions such as:
+
+* How have layoffs changed over time?
+* Which industries experienced the greatest number of layoffs?
+* Which countries were most affected?
+* Which companies recorded the largest layoffs?
+* Which funding stages experienced the most layoffs?
+* Are there identifiable patterns in layoffs over time?
+
+The objective is to move from:
+
+**Data Cleaning → Data Validation → Exploratory Data Analysis → Business Insights**
+
+rather than treating data cleaning as the final objective of the project.
