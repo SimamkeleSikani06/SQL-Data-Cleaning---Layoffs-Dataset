@@ -337,8 +337,8 @@ layoffs-data-analysis/
 │   └── README.md
 │
 ├── sql/
-│   ├── 01_data_cleaning.sql
-│   └── 02_exploratory_data_analysis.sql
+│   ├── data_cleaning.sql
+│   └── exploratory_data_analysis.sql
 │
 └── documentation/
     └── data_cleaning_notes.md
